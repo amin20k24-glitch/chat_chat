@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>چت دو نفره</title>
+<style>
+  :root { --bg:#f0f2f5; --card:#fff; --me:#4f46e5; --me-text:#fff; --other:#e5e7eb; --other-text:#111; --text:#111; --muted:#6b7280; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111827; --card:#1f2937; --other:#374151; --other-text:#f9fafb; --text:#f9fafb; --muted:#9ca3af; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { font-family: Tahoma, "Vazirmatn", sans-serif; background: var(--bg); color: var(--text); }
+  #login { height:100%; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .box { background:var(--card); padding:24px; border-radius:16px; width:100%; max-width:360px; display:flex; flex-direction:column; gap:12px; }
+  .box h2 { text-align:center; }
+  input { padding:12px; border-radius:10px; border:1px solid #d1d5db; font-size:16px; font-family:inherit; background:var(--bg); color:var(--text); }
+  button { padding:12px 16px; border:0; border-radius:10px; background:var(--me); color:#fff; font-size:16px; font-family:inherit; cursor:pointer; }
+  #chat { display:none; height:100%; flex-direction:column; }
+  header { background:var(--me); color:#fff; padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top, 0px)); display:flex; justify-content:space-between; align-items:center; }
+  #msgs { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .m { max-width:78%; padding:9px 13px; border-radius:16px; line-height:1.7; word-wrap:break-word; white-space:pre-wrap; }
+  .m small { display:block; font-size:11px; opacity:.7; margin-top:2px; }
+  .me { align-self:flex-start; background:var(--me); color:var(--me-text); border-bottom-right-radius:4px; }
+  .other { align-self:flex-end; background:var(--other); color:var(--other-text); border-bottom-left-radius:4px; }
+  form { display:flex; gap:8px; padding:10px; padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px)); background:var(--card); }
+  form input { flex:1; }
+  #err { color:#dc2626; font-size:14px; text-align:center; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="box">
+    <h2>💬 چت دو نفره</h2>
+    <input id="name" placeholder="اسم شما">
+    <input id="room" placeholder="کد مخفی اتاق (هر دو یکسان بنویسید)">
+    <button onclick="enter()">ورود</button>
+    <div id="err"></div>
+  </div>
+</div>
+
+<div id="chat">
+  <header><b id="title"></b><span style="font-size:13px;opacity:.85" id="status">در حال اتصال…</span></header>
+  <div id="msgs"></div>
+  <form id="f">
+    <input id="text" placeholder="پیام…" autocomplete="off">
+    <button type="submit">ارسال</button>
+  </form>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ====== اینجا اطلاعات Firebase خودت رو جایگزین کن ======
+const firebaseConfig = {
+  apiKey: "PASTE_HERE",
+  authDomain: "PASTE_HERE",
+  projectId: "PASTE_HERE",
+  storageBucket: "PASTE_HERE",
+  messagingSenderId: "PASTE_HERE",
+  appId: "PASTE_HERE"
+};
+// =======================================================
+
+let db, myName, col;
+const $ = id => document.getElementById(id);
+
+try { $('name').value = localStorage.getItem('n') || ''; $('room').value = localStorage.getItem('r') || ''; } catch (e) {}
+
+function enter() {
+  myName = $('name').value.trim();
+  const room = $('room').value.trim();
+  if (!myName || !room) { $('err').textContent = 'اسم و کد اتاق رو بنویس'; return; }
+  try { localStorage.setItem('n', myName); localStorage.setItem('r', room); } catch (e) {}
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  } catch (e) { $('err').textContent = 'تنظیمات Firebase درست نیست'; return; }
+
+  col = db.collection('rooms').doc(room).collection('messages');
+  $('login').style.display = 'none';
+  $('chat').style.display = 'flex';
+  $('title').textContent = room;
+
+  col.orderBy('t').onSnapshot(snap => {
+    $('status').textContent = 'متصل ✓';
+    const box = $('msgs');
+    box.innerHTML = '';
+    snap.forEach(d => {
+      const m = d.data();
+      const el = document.createElement('div');
+      el.className = 'm ' + (m.from === myName ? 'me' : 'other');
+      el.textContent = m.text;
+      const s = document.createElement('small');
+      const time = m.t ? m.t.toDate().toLocaleTimeString('fa-IR', {hour:'2-digit', minute:'2-digit'}) : '…';
+      s.textContent = (m.from === myName ? '' : m.from + ' · ') + time;
+      el.appendChild(s);
+      box.appendChild(el);
+    });
+    box.scrollTop = box.scrollHeight;
+  }, () => { $('status').textContent = 'خطا در اتصال'; });
+}
+
+$('f').addEventListener('submit', e => {
+  e.preventDefault();
+  const text = $('text').value.trim();
+  if (!text) return;
+  col.add({ text, from: myName, t: firebase.firestore.FieldValue.serverTimestamp() });
+  $('text').value = '';
+});
+</script>
+</body>
+</html>
